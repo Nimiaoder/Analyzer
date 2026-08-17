@@ -2,8 +2,9 @@ package com.liu.analyzer.engine;
 import com.liu.analyzer.model.PackageInfo;
 import com.liu.analyzer.model.PacketPattern;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -11,7 +12,8 @@ import java.util.function.Consumer;
  */
 public class PacketDispatcher {
 
-    private final Map<PacketPattern, Consumer<PackageInfo>> handlers = new ConcurrentHashMap<>();
+    // 依據 put 的順序載入，確保先註冊的 Pattern 先比對
+    private final Map<PacketPattern, Consumer<PackageInfo>> handlers = Collections.synchronizedMap(new LinkedHashMap<>());
     private final TcpStreamReassembler tcpReassembler = new TcpStreamReassembler();
 
     /**
@@ -58,6 +60,7 @@ public class PacketDispatcher {
                 if (isTcp && sessionKey != null) {
                     tcpReassembler.consume(sessionKey, matchedIndex + pattern.length());
                 }
+                break; // 成功一個就直接跳出，不給後續 Pattern 比對
             }
         }
     }
