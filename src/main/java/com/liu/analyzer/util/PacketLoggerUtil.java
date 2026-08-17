@@ -28,6 +28,7 @@ public class PacketLoggerUtil {
         String srcIp = info.layer3().srcIp();
         String dstIp = info.layer3().dstIp();
         String protocol = info.layer4().transportProtocol();
+        String appProtocol = info.layer7().appProtocol();
         int srcPort = info.layer4().srcPort();
         int dstPort = info.layer4().dstPort();
         long seq = info.layer4().sequenceNumber();
@@ -36,7 +37,8 @@ public class PacketLoggerUtil {
         int payloadLength = info.payload().length();
 
         System.out.println("================================================================================");
-        System.out.printf("[%s] %s | 協定: %s | 大小: %d Bytes\n", timeStr, dirIcon, protocol, payloadLength);
+        System.out.printf("[%s] %s | 傳輸層: %s | 應用層: %s | 大小: %d Bytes\n",
+                timeStr, dirIcon, protocol, appProtocol, payloadLength);
         System.out.printf(" ├─ 來源 (Src): %s:%d (MAC: %s)\n", srcIp, srcPort, info.layer2().srcMac());
         System.out.printf(" ├─ 目的 (Dst): %s:%d (MAC: %s)\n", dstIp, dstPort, info.layer2().dstMac());
         if ("TCP".equals(protocol)) {
@@ -51,13 +53,18 @@ public class PacketLoggerUtil {
      * 適合高流量、大量封包洗版時的高效即時監控。
      */
     public static void logCompactSingleLine(PackageInfo info) {
-        String dir = info.direction() == PackageInfo.Direction.SEND ? "OUT" : "IN";
+        String dir = switch (info.direction()) {
+            case SEND -> "OUT";
+            case RECEIVE -> "IN";
+            case UNKNOWN -> "N/A";
+        };
         String timeStr = TIME_FORMATTER.format(info.timestamp());
 
-        System.out.printf("[%s][%s][%s] %s:%d -> %s:%d | Len:%d | Hex: %s\n",
+        System.out.printf("[%s][%s][%s/%s] %s:%d -> %s:%d | Len:%d | Hex: %s\n",
                 timeStr,
                 dir,
                 info.layer4().transportProtocol(),
+                info.layer7().appProtocol(),
                 info.layer3().srcIp(), info.layer4().srcPort(),
                 info.layer3().dstIp(), info.layer4().dstPort(),
                 info.payload().length(),
@@ -76,7 +83,7 @@ public class PacketLoggerUtil {
         String readableAscii = info.payload().toReadableAscii();
         String utf8String = new String(raw, StandardCharsets.UTF_8).replaceAll("\\r|\\n", " ");
 
-        System.out.println("[文字內容解析]");
+        System.out.println("[文字內容解析] 協定: " + info.layer7().appProtocol());
         System.out.println(" ├─ 方向: " + info.direction());
         System.out.println(" ├─ 可讀 ASCII: " + readableAscii);
         System.out.println(" └─ UTF-8 字串: " + utf8String);
@@ -92,6 +99,7 @@ public class PacketLoggerUtil {
               "timestamp": "%s",
               "direction": "%s",
               "protocol": "%s",
+              "appProtocol": "%s",
               "src": "%s:%d",
               "dst": "%s:%d",
               "length": %d,
@@ -101,12 +109,22 @@ public class PacketLoggerUtil {
                 TIME_FORMATTER.format(info.timestamp()),
                 info.direction(),
                 info.layer4().transportProtocol(),
+                info.layer7().appProtocol(),
                 info.layer3().srcIp(), info.layer4().srcPort(),
                 info.layer3().dstIp(), info.layer4().dstPort(),
                 info.payload().length(),
-                info.payload().toHexString()
+                escapeJson(info.payload().toHexString())
         );
 
         System.out.println(jsonOutput);
+    }
+
+    /** 簡易 JSON 字串跳脫，避免輸出格式被破壞 */
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

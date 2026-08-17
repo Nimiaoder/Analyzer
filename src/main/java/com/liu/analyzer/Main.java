@@ -5,15 +5,7 @@ import com.liu.analyzer.processor.PackageProcesser;
 import com.liu.analyzer.util.NetworkInterfaceUtil;
 import com.liu.analyzer.util.PacketLoggerUtil;
 
-import java.nio.charset.StandardCharsets;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-
 public class Main {
-
-    // 時間格式化工具
-    private static final DateTimeFormatter TIME_FORMATTER =
-            DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
     public static void main(String[] args) throws Exception {
         if (args.length > 0 && "--list-interfaces".equalsIgnoreCase(args[0])) {
@@ -39,10 +31,25 @@ public class Main {
                 .register(PacketPattern.TEST_PACKET_1, Main::detailedLogCallback)   // 範例 1: 完整詳細區塊風格
                 .register(PacketPattern.TEST_PACKET_2, Main::singleLineLogCallback) // 範例 2: 高效單行 Log 風格
                 .register(PacketPattern.TEST_PACKET_3, Main::asciiStringCallback)   // 範例 3: 文字/字串解析風格
-                .register(PacketPattern.TEST_CATCH_ALL, Main::jsonFormatCallback);  // 範例 4: 適合丟給前端的 JSON 格式化
+                .register(PacketPattern.TEST_CATCH_ALL, Main::jsonFormatCallback);  // 其餘: JSON 格式化
 
         processer.start();
         System.out.println("封包分析器已啟動，開始監聽...");
+
+        // 定期清理閒置的 TCP 串流緩衝區 (避免長時間執行造成記憶體累積)
+        Thread cleaner = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(60_000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                processer.evictIdleStreams(120_000);
+            }
+        }, "StreamBuffer-Cleaner");
+        cleaner.setDaemon(true);
+        cleaner.start();
     }
 
     // =========================================================================

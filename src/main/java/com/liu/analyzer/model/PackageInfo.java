@@ -10,6 +10,7 @@ public record PackageInfo(
         Layer2Info layer2,
         Layer3Info layer3,
         Layer4Info layer4,
+        Layer7Info layer7,
         PayloadInfo payload
 ) {
     public enum Direction {
@@ -26,6 +27,13 @@ public record PackageInfo(
 
     // === Layer 4: 傳輸層 ===
     public record Layer4Info(int srcPort, int dstPort, String transportProtocol, long sequenceNumber) {}
+
+    // === Layer 7: 應用層協定 (HTTP / HTTPS / DNS / FTP / SFTP ...) ===
+    public record Layer7Info(String appProtocol) {
+        public boolean is(String name) {
+            return appProtocol != null && appProtocol.equalsIgnoreCase(name);
+        }
+    }
 
     // === Payload: 應用層數據 (新增 length 與 toReadableAscii) ===
     public record PayloadInfo(byte[] rawData) {

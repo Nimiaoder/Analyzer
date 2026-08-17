@@ -27,6 +27,20 @@ public class PackageProcesser {
     }
 
     /**
+     * 註冊特徵碼 + 應用層協定過濾的 Callback
+     * 例如：register(PacketPattern.TEST_CATCH_ALL, cb, "HTTP", "HTTPS", "DNS")
+     */
+    public PackageProcesser register(PacketPattern pattern, Consumer<PackageInfo> handler, String... protocols) {
+        this.dispatcher.registerHandler(pattern, handler, protocols);
+        return this;
+    }
+
+    /** 清理閒置超過指定毫秒數的 TCP 串流緩衝區 */
+    public void evictIdleStreams(long idleMillis) {
+        this.dispatcher.evictIdleStreams(idleMillis);
+    }
+
+    /**
      * 異步 / 非阻塞式啟動 (在背景 Thread 中啟動監聽，不會卡住 Main Thread)
      */
     public synchronized void start() {

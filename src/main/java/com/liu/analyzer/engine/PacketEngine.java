@@ -1,6 +1,7 @@
 package com.liu.analyzer.engine;
 import com.liu.analyzer.model.PackageInfo;
 import com.liu.analyzer.util.NetworkInterfaceUtil;
+import com.liu.analyzer.util.ProtocolResolver;
 import org.pcap4j.core.*;
 import org.pcap4j.packet.*;
 
@@ -39,7 +40,11 @@ public class PacketEngine {
         Runtime.getRuntime().addShutdownHook(new Thread(this::stop));
 
         PacketListener listener = rawPacket -> {
-            PackageInfo parsedInfo = parsePacket(rawPacket, this.localIp);
+            // 使用 Pcap 驅動提供的擷取時間，比 Instant.now() 更精確
+            Instant captureTime = currentHandle.getTimestamp() != null
+                    ? currentHandle.getTimestamp().toInstant()
+                    : Instant.now();
+            PackageInfo parsedInfo = parsePacket(rawPacket, this.localIp, captureTime);
             if (parsedInfo != null) {
                 dispatcher.dispatch(parsedInfo);
             }
@@ -72,7 +77,7 @@ public class PacketEngine {
     }
 
     // === 封包解析邏輯 ===
-    private PackageInfo parsePacket(Packet packet, String localIp) {
+    private PackageInfo parsePacket(Packet packet, String localIp, Instant captureTime) {
         if (packet == null) return null;
 
         String srcMac = "N/A", dstMac = "N/A";
@@ -83,18 +88,26 @@ public class PacketEngine {
         }
         PackageInfo.Layer2Info layer2 = new PackageInfo.Layer2Info(srcMac, dstMac);
 
+        // --- Layer 3 (同時支援 IPv4 / IPv6) ---
         String srcIp = "N/A", dstIp = "N/A", protocolType = "N/A";
         if (packet.contains(IpV4Packet.class)) {
             IpV4Packet ipV4 = packet.get(IpV4Packet.class);
             srcIp = ipV4.getHeader().getSrcAddr().getHostAddress();
             dstIp = ipV4.getHeader().getDstAddr().getHostAddress();
             protocolType = ipV4.getHeader().getProtocol().name();
+        } else if (packet.contains(IpV6Packet.class)) {
+            IpV6Packet ipV6 = packet.get(IpV6Packet.class);
+            srcIp = ipV6.getHeader().getSrcAddr().getHostAddress();
+            dstIp = ipV6.getHeader().getDstAddr().getHostAddress();
+            protocolType = ipV6.getHeader().getNextHeader().name();
         }
         PackageInfo.Layer3Info layer3 = new PackageInfo.Layer3Info(srcIp, dstIp, protocolType);
 
+        // --- Layer 4 + Payload (直接由傳輸層封包取得，避免多層封裝時取錯) ---
         int srcPort = 0, dstPort = 0;
-        String transportProtocol = "N/A";
+        String transportProtocol = "OTHER";
         long seqNum = 0;
+        byte[] payloadData = new byte[0];
 
         if (packet.contains(TcpPacket.class)) {
             TcpPacket tcp = packet.get(TcpPacket.class);
@@ -102,18 +115,32 @@ public class PacketEngine {
             dstPort = tcp.getHeader().getDstPort().valueAsInt();
             transportProtocol = "TCP";
             seqNum = tcp.getHeader().getSequenceNumberAsLong();
+            if (tcp.getPayload() != null) payloadData = tcp.getPayload().getRawData();
         } else if (packet.contains(UdpPacket.class)) {
             UdpPacket udp = packet.get(UdpPacket.class);
             srcPort = udp.getHeader().getSrcPort().valueAsInt();
             dstPort = udp.getHeader().getDstPort().valueAsInt();
             transportProtocol = "UDP";
+            if (udp.getPayload() != null) payloadData = udp.getPayload().getRawData();
+        } else if (packet.contains(IcmpV4CommonPacket.class)) {
+            transportProtocol = "ICMP";
+            IcmpV4CommonPacket icmp = packet.get(IcmpV4CommonPacket.class);
+            if (icmp.getPayload() != null) payloadData = icmp.getPayload().getRawData();
+        } else if (packet.contains(IcmpV6CommonPacket.class)) {
+            transportProtocol = "ICMPv6";
+            IcmpV6CommonPacket icmp6 = packet.get(IcmpV6CommonPacket.class);
+            if (icmp6.getPayload() != null) payloadData = icmp6.getPayload().getRawData();
+        } else if (!"N/A".equals(protocolType)) {
+            transportProtocol = protocolType;
         }
-        PackageInfo.Layer4Info layer4 = new PackageInfo.Layer4Info(srcPort, dstPort, transportProtocol, seqNum);
 
-        byte[] payloadData = new byte[0];
-        if (packet.getPayload() != null && packet.getPayload().getPayload() != null) {
-            payloadData = packet.getPayload().getPayload().getRawData();
-        }
+        PackageInfo.Layer4Info layer4 =
+                new PackageInfo.Layer4Info(srcPort, dstPort, transportProtocol, seqNum);
+
+        // --- Layer 7: 應用層協定判別 (HTTP / HTTPS / DNS / FTP / SFTP / ...) ---
+        String appProtocol = ProtocolResolver.resolve(transportProtocol, srcPort, dstPort, payloadData);
+        PackageInfo.Layer7Info layer7 = new PackageInfo.Layer7Info(appProtocol);
+
         PackageInfo.PayloadInfo payload = new PackageInfo.PayloadInfo(payloadData);
 
         PackageInfo.Direction direction = PackageInfo.Direction.UNKNOWN;
@@ -125,6 +152,6 @@ public class PacketEngine {
             }
         }
 
-        return new PackageInfo(Instant.now(), direction, layer2, layer3, layer4, payload);
+        return new PackageInfo(captureTime, direction, layer2, layer3, layer4, layer7, payload);
     }
 }
