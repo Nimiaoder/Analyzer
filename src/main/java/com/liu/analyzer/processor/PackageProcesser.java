@@ -31,7 +31,7 @@ public class PackageProcesser {
      */
     public synchronized void start() {
         if (isRunning) {
-            System.out.println("⚠️ [PackageProcesser] 監聽服務已經在運行中！");
+            System.out.println(" [PackageProcesser] 監聽服務已經在運行中！");
             return;
         }
 
@@ -42,7 +42,7 @@ public class PackageProcesser {
                 engine.start(); // 調用底層 PacketEngine 的 Blocking loop
             } catch (Exception e) {
                 if (isRunning) {
-                    System.err.println("❌ [PackageProcesser] 監聽引擎運行異常: " + e.getMessage());
+                    System.err.println(" [PackageProcesser] 監聽引擎運行異常: " + e.getMessage());
                 }
             } finally {
                 isRunning = false;
@@ -57,11 +57,11 @@ public class PackageProcesser {
      */
     public synchronized void stop() {
         if (!isRunning) {
-            System.out.println("⚠️ [PackageProcesser] 監聽服務未啟動或已停止。");
+            System.out.println(" [PackageProcesser] 監聽服務未啟動或已停止。");
             return;
         }
 
-        System.out.println("🛑 [PackageProcesser] 收到停止指令，正在中斷監聽並釋放網卡...");
+        System.out.println(" [PackageProcesser] 收到停止指令，正在中斷監聽並釋放網卡...");
         isRunning = false;
 
         // 調用 PacketEngine 內部的關閉邏輯
@@ -71,7 +71,7 @@ public class PackageProcesser {
         if (workerThread != null && workerThread.isAlive()) {
             workerThread.interrupt();
         }
-        System.out.println("✅ [PackageProcesser] 監聽服務已成功停止！");
+        System.out.println(" [PackageProcesser] 監聽服務已成功停止！");
     }
 
     public boolean isRunning() {
